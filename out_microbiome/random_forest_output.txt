@@ -1,0 +1,12 @@
+
+Call:
+ randomForest(x = filtered_data, ntree = 100) 
+               Type of random forest: unsupervised
+                     Number of trees: 100
+No. of variables tried at each split: 2
+
+    MeanDecreaseGini
+V31         22.53529
+V39         21.00860
+V44         23.49802
+V49         21.38041
