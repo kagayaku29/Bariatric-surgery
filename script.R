@@ -114,7 +114,7 @@ dis.ilr.m <- as.matrix(dis.ilr)
 pca.res.ilr <- ape::pcoa(dis.ilr.m)
 data.pic.ilr <- mat.cl.all.vars$rar$genus / rowSums(mat.cl.all.vars$rar$genus)
 colnames(data.pic.ilr) <- MakeNiceNamesSilva(colnames(data.pic.ilr))
-cols.ilr <- c('orange', 'cadetblue')
+cols <- c('orange', 'cadetblue')
 col.samp.ilr <- sapply(rownames(data.pic.ilr), function(x) {
   if (x %in% meta.points[batch == 'y.2021']$sample) {
     cols.ilr[1]    
@@ -123,7 +123,7 @@ col.samp.ilr <- sapply(rownames(data.pic.ilr), function(x) {
   }
 })
 
-cols.ilr.2 <- beauty.pallete(4, contrast = TRUE)[2:4]
+cols.2 <- beauty.pallete(4, contrast = TRUE)[2:4]
 col.samp.ilr.2 <- sapply(rownames(data.pic.ilr), function(x) {
   if (x %in% meta.points[point == 1]$sample) {
     cols.ilr.2[1]    
@@ -134,7 +134,7 @@ col.samp.ilr.2 <- sapply(rownames(data.pic.ilr), function(x) {
   }
 })
 
-cols.ilr.3 <- c('red', 'blue')
+cols.3 <- c('red', 'blue')
 col.samp.ilr.3 <- sapply(rownames(data.pic.ilr), function(x) {
   if (x %in% meta.f[met == 1]$sample) {
     cols.ilr.3[1]    
@@ -142,5 +142,111 @@ col.samp.ilr.3 <- sapply(rownames(data.pic.ilr), function(x) {
     cols.ilr.3[2]
   }
 })
+ 
 
-ilr_data <- data.frame(counts.ilr)
+
+###################################################################
+# FIGURE 2 BETA
+###################################################################
+abund.batch.cor <- sapply(names(mat.cl.all.vars$z), function(i) {
+  abund.batch.cor <- clr(mat.cl.all.vars$z[[i]])
+  m1 <- colMeans(abund.batch.cor[meta.points[batch=='y.2021']$sample,])
+  m2 <- colMeans(abund.batch.cor[meta.points[batch=='y.2022']$sample,])
+  abund.batch.cor1 <- rbind(abund.batch.cor[meta.points[batch=='y.2021']$sample,], 
+                            abund.batch.cor[meta.points[batch=='y.2022']$sample,] - m2 + m1) 
+  abund.batch.cor1[rownames(abund.batch.cor), ]
+}, simplify = F)        
+abund.batch.cor.ini <- sapply(abund.batch.cor, function(x) {exp(x)/rowSums(exp(x))*100}, simplify = F)
+dis.cl.cor <- dist(abund.batch.cor$genus)
+dis.cl.cor.m  <-  as.matrix(dis.cl.cor)
+pca.res.cor <- ape::pcoa(dis.cl.cor.m)
+
+pdf('out_microbiome//beta.pdf', width = 10, height = 10)
+par(xpd= T, mar = c(5, 5, 7, 7))
+par(mfrow = c(2, 2))
+lapply(list(pca.res.ilr, pca.res.cor), function(x) {
+  BiplotPcoa2D(data.pic.ilr*50, x, col_sample = unlist(col.samp.ilr), bty = 'n', 
+               seg.from = c(meta.points.w$`1`, meta.points.w$`2`), 
+               seg.to = c(meta.points.w$`2`, meta.points.w$`3`),
+               base = 'cd', thresh = 0.15)
+  legend(16, 10, bty = 'n', fill = cols, border = cols, 
+         legend = c('old', 'new'), cex = 1)
+  
+  lapply(list(c(1, 2), c(1, 3), c(2, 3)), function(y) {
+    BiplotPcoa2D(data.pic.ilr*50, x, col_sample = unlist(col.samp.ilr.2), bty = 'n', 
+                 seg.from = c(meta.points.w$`1`, meta.points.w$`2`), 
+                 seg.to = c(meta.points.w$`2`, meta.points.w$`3`),
+                 base = 'cd', thresh = 0.15, n1 = y[1], n2=y[2])
+    legend(16, 10, bty = 'n', fill = cols.2, border = cols.2,
+           legend = c('baseline', '6 month', '12 month'), cex = 1)
+  })
+  
+  lapply(list(c(1, 2), c(1, 3), c(2, 3)), function(y) {
+    BiplotPcoa2D(data.pic.ilr*50, pca.res.cor, col_sample = unlist(col.samp.ilr.3), bty = 'n', 
+                 seg.from = c(meta.points.w$`1`, meta.points.w$`2`), 
+                 seg.to = c(meta.points.w$`2`, meta.points.w$`3`),
+                 base = 'cd', thresh = 0.15,  n1 = y[1], n2=y[2])
+    legend(16, 10, bty = 'n', fill = cols.3, border = cols.3, 
+           legend = c('yes', 'no'), cex = 1)
+    
+  })
+})
+dev.off()
+
+
+# 1. Проверка зависимости микробиома от медикаментов (например, метформина) в первом временном отрезке
+met0 <- rbindlist(lapply(names(abund.batch.cor), function(lev) {
+  ab.clr.i <- abund.batch.cor[[lev]]  # Извлечение данных о микробиоме для данного уровня таксономии
+  ab.clr.i <- ab.clr.i[rownames(ab.clr.i) %in% meta.f.1$sample, ]  # Фильтрация данных о микробиоме по образцам, представленным в метаданных
+  di <- as.matrix(dist(ab.clr.i[meta.f.1$sample, ]))  # Вычисление расстояний между образцами
+  tr <- meta.f.1$met  # Извлечение информации о медикаментах из метаданных
+  di <- as.dist(di)
+  dt <- data.table(tr = tr)
+  perm <- how(nperm = 10000)  # Установка количества перестановок для PERMANOVA
+  res.pval <- adonis2(di ~ tr, permutations = 10000, data = dt)  # Выполнение PERMANOVA
+  data.table(r2 = res.pval$R2[1], pval = res.pval$`Pr(>F)`[1], lev = lev)  # Сохранение результатов PERMANOVA
+}))
+
+# 2. Проверка зависимости изменений микробиома от изменений медикаментов (например, метформина) с помощью PERMANOVA
+met.perm <- rbindlist(lapply(names(meta.change), function(x) {
+  rbindlist(lapply(names(abund.batch.cor), function(lev) {
+    meta.points.r <- merge(meta.list[[x]], meta.change[[x]][, c('sample', 'met'), with = FALSE], by = 'sample', all.x = TRUE)  # Объединение метаданных и информации об изменениях
+    ab.clr.i <- abund.batch.cor[[lev]]  # Извлечение данных о микробиоме для данного уровня таксономии
+    uu <- unique(meta.points.r$subj)  # Извлечение уникальных идентификаторов субъектов
+    ab.1 <- ab.clr.i[sapply(uu, function(u.i) meta.points.r[subj == u.i & point == pol[[x]][1]]$sample), ]  # Извлечение данных о микробиоме для первого временного отрезка
+    ab.2 <- ab.clr.i[sapply(uu, function(u.i) meta.points.r[subj == u.i & point == pol[[x]][2]]$sample), ]  # Извлечение данных о микробиоме для второго временного отрезка
+    diff.clr <- as.matrix(ab.2 - ab.1)  # Вычисление разницы в составе микробиома между временными отрезками
+    di <- as.matrix(dist(diff.clr))  # Вычисление расстояний между образцами
+    tr <- sapply(uu, function(u.i) (meta.points.r[subj == u.i & point == pol[[x]][1]]$met)[1])  # Извлечение информации о медикаментах для первого временного отрезка
+    di <- as.dist(di)
+    dt <- data.table(tr = tr)
+    perm <- how(nperm = 10000)  # Установка количества перестановок для PERMANOVA
+    res.pval <- adonis2(di ~ tr, permutations = 10000, data = dt)  # Выполнение PERMANOVA
+    data.table(r2 = res.pval$R2[1], pval = res.pval$`Pr(>F)`[1], pol = x, lev = lev)  # Сохранение результатов PERMANOVA
+  }))
+}))
+
+# 3. Проверка зависимости изменений микробиома от изменений медикаментов (например, метформина) с помощью линейной модели
+met.lm <- rbindlist(lapply(names(meta.change), function(x) {
+  rbindlist(lapply(names(abund.batch.cor), function(lev) {
+    message(x)
+    meta.points.r <- merge(meta.list[[x]], meta.change[[x]][, c('sample', 'met'), with = FALSE], by = 'sample', all.x = TRUE)  # Объединение метаданных и информации об изменениях
+    ab.clr.i <- abund.batch.cor[[lev]]  # Извлечение данных о микробиоме для данного уровня таксономии
+    di <- as.matrix(dist(ab.clr.i))  # Вычисление расстояний между образцами
+    shift <- meta.points.r[, di[.SD[point == pol[[x]][1]]$sample, .SD[point == pol[[x]][2]]$sample], by = subj]  # Вычисление сдвига в составе микробиома между временными отрезками
+    shift <- merge(shift, unique(meta.points.r[point == pol[[x]][1], c('met', 'batch', 'subj'), with = FALSE]), by = 'subj')  # Объединение информации о медикаментах и времени
+    res <- lm(shift$V1 ~ shift$met)  # Построение линейной модели
+    data.table(pval = summary(res)$coefficients[2, 4], pol = x)  # Сохранение результатов линейной модели
+  }))
+}))
+
+# Отображение минимальных p-значений
+min(met0$pval)
+min(met.perm$pval)
+min(met.lm$pval)
+# Запись минимальных p-значений в таблицу
+min_pval_table <- data.table(
+  Method = c("PERMANOVA (Initial Time Point)", "PERMANOVA (Metformin Change)", "Linear Model (Metformin Change)"),
+  Min_P_Value = c(min(met0$pval), min(met.perm$pval), min(met.lm$pval))
+)
+
