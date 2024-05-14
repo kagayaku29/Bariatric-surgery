@@ -250,3 +250,30 @@ min_pval_table <- data.table(
   Min_P_Value = c(min(met0$pval), min(met.perm$pval), min(met.lm$pval))
 )
 
+
+################################################################################
+# MICROBIOME DYNAMICS PERMANOVА
+################################################################################
+res.perm <- rbindlist(lapply(names(pol), function(p.i) {
+  rbindlist(lapply(names(mat.cl.all.vars$z), function(lev) {
+    counts.cl.clr <- abund.batch.cor[[lev]]  # Извлечение данных о микробиоме для данного уровня таксономии
+    dis.cl <- dist(counts.cl.clr)  # Вычисление расстояний между образцами
+    dis.cl.m  <-  as.matrix(dis.cl)
+    perm <- how(nperm = 10000)  # Установка количества перестановок для PERMANOVA
+    data.perm <- data.table(
+      po = meta.list[[p.i]]$point,  # Извлечение временных точек из метаданных
+      strata = meta.list[[p.i]]$subj  # Извлечение идентификаторов субъектов из метаданных
+    )
+    setBlocks(perm) <- with(data.perm, strata)  # Установка блоков для перестановок
+    ad.res.12 <- adonis2(as.dist(dis.cl.m[meta.list[[p.i]]$sample, meta.list[[p.i]]$sample]) ~ po, data = data.perm, permutations = perm)  # Выполнение PERMANOVA
+    n.12 <- length(unique(meta.list[[p.i]]$subj))  # Вычисление количества уникальных субъектов
+    data.table(
+      n = c(n.12),
+      p = c(ad.res.12$`Pr(>F)`[1]),  # Сохранение p-значения
+      r = c(ad.res.12$R2[1]),  # Сохранение значения R2
+      type = p.i,  # Сохранение типа анализа
+      lev = lev  # Сохранение уровня таксономии
+    )
+  }))
+}))
+write.csv(res.perm, file = "permanova.csv", row.names = FALSE)
